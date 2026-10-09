@@ -1,163 +1,136 @@
 import os
 import asyncio
-import logging
-from aiogram import Bot, Dispatcher, F, types
+from aiohttp import web
+from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
-# Токен бота от @BotFather
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_БОТА_СЮДА")
-
-# Ссылки на партнерские офферы
-LINK_EDA = "https://trk.ppdu.ru/click/lRpy1nrx?erid=CQH36pWzJqVGXC5oLP8WVVNCNqJmbhiUPijGiu4zpwPd7G"
-LINK_TRUCK = "https://trk.ppdu.ru/click/AZv8hynP?erid=CQH36pWzJqVGXC5oTTDpMBk8ei82kpZxV9ZJ1ZC292TAKx"
-LINK_LAVKA = "https://trk.ppdu.ru/click/1F5Kat49?erid=CQH36pWzJqVGXC5oUHvq1FTH2g3oi1KL72bsqkyo9iVXM7"
-LINK_CURATOR = "https://t.me/bystrosmena"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Главная клавиатура
-def main_kb():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🍔 Курьер (пеший / вело / авто)", callback_data="vac_eda")
-    builder.button(text="📦 Склад / Комплектовщик", callback_data="vac_lavka")
-    builder.button(text="🚚 Грузовой авто (водитель)", callback_data="vac_truck")
-    builder.button(text="❓ Частые вопросы (FAQ)", callback_data="menu_faq")
-    builder.button(text="👤 Связаться с куратором", url=LINK_CURATOR)
-    builder.adjust(1)
-    return builder.as_markup()
+def get_main_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🚴 Курьер / Доставка", callback_data="cat_courier")],
+        [InlineKeyboardButton(text="📦 Склад / Сборка / Комплектовка", callback_data="cat_warehouse")],
+        [InlineKeyboardButton(text="❓ Частые вопросы (FAQ)", callback_data="faq")],
+        [InlineKeyboardButton(text="💬 Связь с куратором", callback_data="support")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# Кнопка возврата в меню
-def back_kb(target_link=None, btn_text="👉 Подать заявку онлайн"):
-    builder = InlineKeyboardBuilder()
-    if target_link:
-        builder.button(text=btn_text, url=target_link)
-    builder.button(text="⬅️ Назад в меню", callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+def get_courier_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🟢 Яндекс Еда (Пеший / Вело / Авто)", url="https://pampadu.ru/")],
+        [InlineKeyboardButton(text="🟡 СберМаркет / Купер", url="https://pampadu.ru/")],
+        [InlineKeyboardButton(text="🔵 Ozon fresh курьер", url="https://pampadu.ru/")],
+        [InlineKeyboardButton(text="◀️ Назад в меню", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# Меню FAQ
-def faq_kb():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="1. Нужен ли опыт работы?", callback_data="faq_exp")
-    builder.button(text="2. Когда приходят первые выплаты?", callback_data="faq_pay")
-    builder.button(text="3. Сколько стоит форма и сумка?", callback_data="faq_kit")
-    builder.button(text="4. Можно ли совмещать с учёбой?", callback_data="faq_time")
-    builder.button(text="⬅️ Назад в меню", callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+def get_warehouse_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="📦 Склад Ozon (Сборка / Комплектовка)", url="https://pampadu.ru/")],
+        [InlineKeyboardButton(text="🏬 Склад Wildberries", url="https://pampadu.ru/")],
+        [InlineKeyboardButton(text="◀️ Назад в меню", callback_data="back_to_main")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад в меню", callback_data="back_to_main")]]
+    )
 
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message):
-    text = (
-        "👋 **Добро пожаловать в сервис «Быстро Смена»!**\n\n"
-        "Я виртуальный куратор. Помогу подобрать проверенную работу или подработку "
-        "рядом с домом с ежедневными выплатами.\n\n"
-        "📍 Без комиссий, прямое официальное оформление.\n\n"
-        "**Выберите интересующее направление:**"
+async def handle_start(message: Message):
+    welcome_text = (
+        "👋 **Добро пожаловать в сервис подбора смен «Быстро Смена»!**\n\n"
+        "Мы помогаем быстро найти проверенную подработку и смены рядом с домом:\n"
+        "• Ежедневные / еженедельные выплаты\n"
+        "• Свободный график и выбор локации\n"
+        "• Бесплатное оформление и поддержка куратора\n\n"
+        "Выберите интересующее направление ниже 👇"
     )
-    await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
+    await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-@dp.callback_query(F.data == "main_menu")
-async def back_to_main(call: types.CallbackQuery):
-    text = (
-        "💼 **Главное меню вакансий «Быстро Смена»**\n\n"
-        "Выберите направление, чтобы узнать условия и подать онлайн-заявку:"
+@dp.callback_query(F.data == "cat_courier")
+async def show_courier_vacancies(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🚴 **Направление: Курьер и Доставка**\n\n"
+        "• Доход: до 5 000 — 9 000 ₽ за смену\n"
+        "• Выплаты: ежедневно или еженедельно\n"
+        "• Можно пешком, на велосипеде, самокате или авто\n\n"
+        "Выберите партнёра для оформления заявки:",
+        reply_markup=get_courier_keyboard(),
+        parse_mode="Markdown"
     )
-    await call.message.edit_text(text, reply_markup=main_kb(), parse_mode="Markdown")
-    await call.answer()
+    await callback.answer()
 
-# Вакансия: Курьер
-@dp.callback_query(F.data == "vac_eda")
-async def vacancy_eda(call: types.CallbackQuery):
-    text = (
-        "🍔 **Курьер сервиса доставок**\n\n"
-        "💰 **Доход:** до 11 000 ₽ / смену (ежедневно на карту)\n\n"
-        "• **Формат:** пешком, велосипед, электросамокат или авто\n"
-        "• **График:** полностью свободный (смены от 2 часов)\n"
-        "• **Плюсы:** бесплатная форма и термосумка, чаевые 100% ваши\n"
-        "• **Возраст:** от 18 лет (в ряде городов с 16 лет)\n\n"
-        "Оформление занимает 2 минуты со смартфона 👇"
+@dp.callback_query(F.data == "cat_warehouse")
+async def show_warehouse_vacancies(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "📦 **Направление: Склад и Логистика**\n\n"
+        "• Доход: от 3 500 до 7 000 ₽ за смену\n"
+        "• Обязанности: комплектация, сборка, сортировка товаров\n"
+        "• Предоставляется форма и корпоративный транспорт\n\n"
+        "Выберите склад для оформления заявки:",
+        reply_markup=get_warehouse_keyboard(),
+        parse_mode="Markdown"
     )
-    await call.message.edit_text(text, reply_markup=back_kb(LINK_EDA, "👉 Оформить анкету курьера"), parse_mode="Markdown")
-    await call.answer()
+    await callback.answer()
 
-# Вакансия: Склад
-@dp.callback_query(F.data == "vac_lavka")
-async def vacancy_lavka(call: types.CallbackQuery):
-    text = (
-        "📦 **Кладовщик-комплектовщик (тёплый склад)**\n\n"
-        "💰 **Доход:** до 150 000 ₽ / мес (в регионах до 100 000 ₽)\n\n"
-        "• **Условия:** работа в помещении у дома, без доставок по улице\n"
-        "• **График:** сменный 5/2 (по 8 часов)\n"
-        "• **Бонусы:** бесплатное такси до дома при вечерней смене, комплексные обеды за 95 ₽, ДМС и медкнижка за 0 ₽\n\n"
-        "Нажмите кнопку ниже для отправки анкеты 👇"
+@dp.callback_query(F.data == "faq")
+async def show_faq(callback: CallbackQuery):
+    faq_text = (
+        "❓ **Часто задаваемые вопросы:**\n\n"
+        "1. **Берут ли без опыта?**\n"
+        "— Да, стажировка проходит на месте в первый рабочий день.\n\n"
+        "2. **Когда приходят первые деньги?**\n"
+        "— Зависит от партнера: у большинства вывод доступен сразу после смены на карту.\n\n"
+        "3. **Сколько часов длится смена?**\n"
+        "— От 4 до 12 часов по вашему выбору."
     )
-    await call.message.edit_text(text, reply_markup=back_kb(LINK_LAVKA, "👉 Подать заявку на склад"), parse_mode="Markdown")
-    await call.answer()
+    await callback.message.edit_text(faq_text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+    await callback.answer()
 
-# Вакансия: Грузовой
-@dp.callback_query(F.data == "vac_truck")
-async def vacancy_truck(call: types.CallbackQuery):
-    text = (
-        "🚚 **Водитель грузового транспорта**\n\n"
-        "💰 **Доход:** до 337 000 ₽ / мес\n\n"
-        "• **Формат:** свой грузовой авто или аренда (от каблука до Газели)\n"
-        "• **Категории прав:** B или C\n"
-        "• **Выплаты:** моментальный вывод средств на любую карту\n"
-        "• **Плюсы:** страховка жизни и груза на каждом рейсе\n\n"
-        "Перейдите к онлайн-регистрации авто 👇"
+@dp.callback_query(F.data == "support")
+async def show_support(callback: CallbackQuery):
+    support_text = (
+        "💬 **Поддержка куратора**\n\n"
+        "Если у вас есть вопросы по оформлению, документам или смене:\n"
+        "Напишите куратору: @inkognitoalesa"
     )
-    await call.message.edit_text(text, reply_markup=back_kb(LINK_TRUCK, "👉 Зарегистрировать авто"), parse_mode="Markdown")
-    await call.answer()
+    await callback.message.edit_text(support_text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
+    await callback.answer()
 
-# Раздел FAQ
-@dp.callback_query(F.data == "menu_faq")
-async def open_faq(call: types.CallbackQuery):
-    text = "❓ **Частые вопросы соискателей:**\n\nВыберите интересующий вопрос:"
-    await call.message.edit_text(text, reply_markup=faq_kb(), parse_mode="Markdown")
-    await call.answer()
-
-@dp.callback_query(F.data == "faq_exp")
-async def faq_exp(call: types.CallbackQuery):
-    text = (
-        "❓ **Нужен ли опыт работы?**\n\n"
-        "Опыт не требуется! Обучение и понятный видеоинструктаж проходят прямо в приложении за 15 минут. Выйти на первый слот можно сразу после регистрации."
+@dp.callback_query(F.data == "back_to_main")
+async def back_to_main(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "Главное меню сервиса **«Быстро Смена»**.\nВыберите направление:",
+        reply_markup=get_main_keyboard(),
+        parse_mode="Markdown"
     )
-    await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
-    await call.answer()
+    await callback.answer()
 
-@dp.callback_query(F.data == "faq_pay")
-async def faq_pay(call: types.CallbackQuery):
-    text = (
-        "❓ **Когда приходят первые выплаты?**\n\n"
-        "Деньги перечисляются ежедневно (при самозанятости) или раз в неделю прямо на карту любого банка РФ без скрытых сборов и вычетов."
-    )
-    await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
-    await call.answer()
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
 
-@dp.callback_query(F.data == "faq_kit")
-async def faq_kit(call: types.CallbackQuery):
-    text = (
-        "❓ **Сколько стоит форма и сумка?**\n\n"
-        "Абсолютно 0 рублей! Комплект одежды по сезону и термосумка выдаются бесплатно в сервисном центре без залогов и удержаний из зарплаты."
-    )
-    await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
-    await call.answer()
-
-@dp.callback_query(F.data == "faq_time")
-async def faq_time(call: types.CallbackQuery):
-    text = (
-        "❓ **Можно ли совмещать с учёбой или работой?**\n\n"
-        "Да, вы сами планируете график: слоты длятся от 2 часов. Можно выходить только вечером, в свободные от пар часы или по выходным дням."
-    )
-    await call.message.edit_text(text, reply_markup=back_kb(), parse_mode="Markdown")
-    await call.answer()
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-    print("Бот запущен и готов к приему сообщений...")
+    await start_web_server()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

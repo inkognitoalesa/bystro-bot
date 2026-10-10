@@ -135,7 +135,7 @@ async def show_support(callback: CallbackQuery):
     support_text = (
         "💬 **Поддержка куратора**\n\n"
         "Если у вас есть вопросы по оформлению или выходу на смену:\n"
-        "Напишите куратору: @inkognitoalesa"
+        "Напишите куратору: @bystrosmena"
     )
     await callback.message.edit_text(support_text, reply_markup=get_back_keyboard(), parse_mode="Markdown")
     await callback.answer()
